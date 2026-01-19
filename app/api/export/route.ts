@@ -65,8 +65,11 @@ export async function GET() {
         region.charAt(0).toUpperCase() + region.slice(1)
       );
 
-      // Create header row
-      const headerRow = ["Product Family", "Metric", ...periodLabels];
+      // Filter products for this region only
+      const regionProducts = productFamilies.filter(p => p.region === region);
+
+      // Create header row with 4 Quarter Total
+      const headerRow = ["Product Family", "Metric", ...periodLabels, "4 Quarter Total"];
       worksheet.addRow(headerRow);
 
       // Style header
@@ -79,8 +82,8 @@ export async function GET() {
       };
       headerRowObj.font = { bold: true, color: { argb: "FFFFFFFF" } };
 
-      // Add data rows for each product family
-      for (const product of productFamilies) {
+      // Add data rows for each product family in this region
+      for (const product of regionProducts) {
         const submission = allSubmissions?.find(
           (s) => s.region === region && s.product_family_id === product.id
         );
@@ -89,8 +92,8 @@ export async function GET() {
           "Customer Revenue",
           "Derate %",
           "Net Revenue",
-          "BOM Cost",
-          "BOM %",
+          "VAM $",
+          "VAM %",
           "NRE Revenue",
         ];
 
@@ -100,31 +103,91 @@ export async function GET() {
             metric,
           ];
 
-          activePeriods.forEach((period) => {
+          let quarterTotal = 0;
+          const firstFourPeriods = activePeriods.slice(0, 4); // Q1-Q4 only
+
+          firstFourPeriods.forEach((period) => {
             let value: any = "";
 
             if (metric === "Customer Revenue") {
               value = submission?.[`${period}_customer_revenue`] || 0;
+              quarterTotal += value;
             } else if (metric === "Derate %") {
               value = submission?.[`${period}_derate_percent`] || 0;
+              // Don't sum percentages
             } else if (metric === "Net Revenue") {
               const revenue = submission?.[`${period}_customer_revenue`] || 0;
               const derate = submission?.[`${period}_derate_percent`] || 0;
               value = calculateNetRevenue(revenue, derate);
-            } else if (metric === "BOM Cost") {
+              quarterTotal += value;
+            } else if (metric === "VAM $") {
               value = submission?.[`${period}_bom_cost`] || 0;
-            } else if (metric === "BOM %") {
-              const bom = submission?.[`${period}_bom_cost`] || 0;
+              quarterTotal += value;
+            } else if (metric === "VAM %") {
+              const vamDollar = submission?.[`${period}_bom_cost`] || 0;
               const revenue = submission?.[`${period}_customer_revenue`] || 0;
               const derate = submission?.[`${period}_derate_percent`] || 0;
               const netRev = calculateNetRevenue(revenue, derate);
-              value = calculateBomPercent(bom, netRev);
+              value = netRev > 0 ? (vamDollar / netRev) * 100 : 0;
+              // Don't sum percentages
             } else if (metric === "NRE Revenue") {
               value = submission?.[`${period}_nre_revenue`] || 0;
+              quarterTotal += value;
             }
 
             row.push(value);
           });
+
+          // Add Year 2 and Year 3 if applicable (but don't include in 4 Quarter Total)
+          if (settings.time_horizon === "3year") {
+            ["year2", "year3"].forEach((period) => {
+              let value: any = "";
+              
+              if (metric === "Customer Revenue") {
+                value = submission?.[`${period}_customer_revenue`] || 0;
+              } else if (metric === "Derate %") {
+                value = submission?.[`${period}_derate_percent`] || 0;
+              } else if (metric === "Net Revenue") {
+                const revenue = submission?.[`${period}_customer_revenue`] || 0;
+                const derate = submission?.[`${period}_derate_percent`] || 0;
+                value = calculateNetRevenue(revenue, derate);
+              } else if (metric === "BOM Cost") {
+                value = submission?.[`${period}_bom_cost`] || 0;
+              } else if (metric === "VAM %") {
+                const bom = submission?.[`${period}_bom_cost`] || 0;
+                const revenue = submission?.[`${period}_customer_revenue`] || 0;
+                const derate = submission?.[`${period}_derate_percent`] || 0;
+                const netRev = calculateNetRevenue(revenue, derate);
+                const vam = netRev - bom;
+                value = netRev > 0 ? (vam / netRev) * 100 : 0;
+              } else if (metric === "NRE Revenue") {
+                value = submission?.[`${period}_nre_revenue`] || 0;
+              }
+
+              row.push(value);
+            });
+          }
+
+          // Add 4 Quarter Total
+          if (metric === "Derate %") {
+            row.push(""); // Don't total derate percentage
+          } else if (metric === "VAM %") {
+            // Calculate VAM% for 4 quarter total
+            let totalVamDollar = 0;
+            let totalNetRevenue = 0;
+
+            firstFourPeriods.forEach((period) => {
+              totalVamDollar += submission?.[`${period}_bom_cost`] || 0;
+              const revenue = submission?.[`${period}_customer_revenue`] || 0;
+              const derate = submission?.[`${period}_derate_percent`] || 0;
+              totalNetRevenue += calculateNetRevenue(revenue, derate);
+            });
+
+            const vamPctTotal = totalNetRevenue > 0 ? (totalVamDollar / totalNetRevenue) * 100 : 0;
+            row.push(vamPctTotal);
+          } else {
+            row.push(quarterTotal);
+          }
 
           worksheet.addRow(row);
         });
@@ -144,7 +207,7 @@ export async function GET() {
             if (colNumber > 2) {
               const metricIndex = ((rowNumber - 2) % 6);
               if (metricIndex === 1 || metricIndex === 4) {
-                // Derate % and BOM %
+                // Derate % and VAM %
                 cell.numFmt = '0.00"%"';
               } else {
                 // Currency
@@ -165,13 +228,13 @@ export async function GET() {
     // Create Summary Tab
     const summarySheet = workbook.addWorksheet("Summary");
 
+    // Section 1: Global Aggregation (All Sites Combined)
     summarySheet.addRow(["GLOBAL AGGREGATION"]);
     summarySheet.getRow(1).font = { bold: true, size: 14 };
     summarySheet.addRow([]);
 
-    // Calculate global totals
-    const headerRow = ["Metric", ...periodLabels];
-    summarySheet.addRow(headerRow);
+    const globalHeaderRow = ["Metric", ...periodLabels, "4 Quarter Total"];
+    summarySheet.addRow(globalHeaderRow);
     summarySheet.getRow(3).font = { bold: true };
     summarySheet.getRow(3).fill = {
       type: "pattern",
@@ -183,51 +246,106 @@ export async function GET() {
     const globalMetrics = [
       "Total Customer Revenue",
       "Total Net Revenue",
-      "Total BOM Cost",
+      "Total VAM $",
       "Total NRE Revenue",
-      "Group BOM %",
+      "Group VAM %",
     ];
 
     globalMetrics.forEach((metric) => {
       const row: any[] = [metric];
 
-      activePeriods.forEach((period) => {
+      let quarterTotal = 0;
+      const firstFourPeriods = activePeriods.slice(0, 4);
+
+      firstFourPeriods.forEach((period) => {
         let total = 0;
 
         if (metric === "Total Customer Revenue") {
           allSubmissions?.forEach((sub) => {
             total += sub[`${period}_customer_revenue`] || 0;
           });
+          quarterTotal += total;
         } else if (metric === "Total Net Revenue") {
           allSubmissions?.forEach((sub) => {
             const revenue = sub[`${period}_customer_revenue`] || 0;
             const derate = sub[`${period}_derate_percent`] || 0;
             total += calculateNetRevenue(revenue, derate);
           });
-        } else if (metric === "Total BOM Cost") {
+          quarterTotal += total;
+        } else if (metric === "Total VAM $") {
           allSubmissions?.forEach((sub) => {
             total += sub[`${period}_bom_cost`] || 0;
           });
+          quarterTotal += total;
         } else if (metric === "Total NRE Revenue") {
           allSubmissions?.forEach((sub) => {
             total += sub[`${period}_nre_revenue`] || 0;
           });
-        } else if (metric === "Group BOM %") {
-          let totalBom = 0;
+          quarterTotal += total;
+        } else if (metric === "Group VAM %") {
+          let totalVamDollar = 0;
           let totalNetRev = 0;
 
           allSubmissions?.forEach((sub) => {
-            totalBom += sub[`${period}_bom_cost`] || 0;
+            totalVamDollar += sub[`${period}_bom_cost`] || 0;
             const revenue = sub[`${period}_customer_revenue`] || 0;
             const derate = sub[`${period}_derate_percent`] || 0;
             totalNetRev += calculateNetRevenue(revenue, derate);
           });
 
-          total = calculateBomPercent(totalBom, totalNetRev);
+          total = totalNetRev > 0 ? (totalVamDollar / totalNetRev) * 100 : 0;
         }
 
         row.push(total);
       });
+
+      // Add Year 2 and Year 3 if applicable
+      if (settings.time_horizon === "3year") {
+        ["year2", "year3"].forEach((period) => {
+          let total = 0;
+
+          if (metric === "Total Customer Revenue") {
+            allSubmissions?.forEach((sub) => {
+              total += sub[`${period}_customer_revenue`] || 0;
+            });
+          } else if (metric === "Total Net Revenue") {
+            allSubmissions?.forEach((sub) => {
+              const revenue = sub[`${period}_customer_revenue`] || 0;
+              const derate = sub[`${period}_derate_percent`] || 0;
+              total += calculateNetRevenue(revenue, derate);
+            });
+          } else if (metric === "Total VAM $") {
+            allSubmissions?.forEach((sub) => {
+              total += sub[`${period}_bom_cost`] || 0;
+            });
+          } else if (metric === "Total NRE Revenue") {
+            allSubmissions?.forEach((sub) => {
+              total += sub[`${period}_nre_revenue`] || 0;
+            });
+          } else if (metric === "Group VAM %") {
+            let totalVamDollar = 0;
+            let totalNetRev = 0;
+
+            allSubmissions?.forEach((sub) => {
+              totalVamDollar += sub[`${period}_bom_cost`] || 0;
+              const revenue = sub[`${period}_customer_revenue`] || 0;
+              const derate = sub[`${period}_derate_percent`] || 0;
+              totalNetRev += calculateNetRevenue(revenue, derate);
+            });
+
+            total = totalNetRev > 0 ? (totalVamDollar / totalNetRev) * 100 : 0;
+          }
+
+          row.push(total);
+        });
+      }
+
+      // Add 4 Quarter Total
+      if (metric === "Group VAM %") {
+        row.push(""); // Don't total percentages
+      } else {
+        row.push(quarterTotal);
+      }
 
       summarySheet.addRow(row);
     });
@@ -236,60 +354,140 @@ export async function GET() {
     summarySheet.addRow([]);
     summarySheet.addRow([]);
 
-    // Add regional breakout
+    // Section 2: Regional Breakout (Totals by Region)
     summarySheet.addRow(["REGIONAL BREAKOUT"]);
     summarySheet.getRow(summarySheet.rowCount).font = { bold: true, size: 14 };
     summarySheet.addRow([]);
 
     for (const region of regions) {
       const regionName = region.charAt(0).toUpperCase() + region.slice(1);
+      
+      // Region header
       summarySheet.addRow([regionName]);
       summarySheet.getRow(summarySheet.rowCount).font = { bold: true, size: 12 };
 
-      const regionHeader = ["Product Family", "Metric", ...periodLabels];
+      // Region metrics header
+      const regionHeader = ["Metric", ...periodLabels, "4 Quarter Total"];
       summarySheet.addRow(regionHeader);
       summarySheet.getRow(summarySheet.rowCount).font = { bold: true };
+      summarySheet.getRow(summarySheet.rowCount).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFD9E1F2" },
+      };
 
-      for (const product of productFamilies) {
-        const submission = allSubmissions?.find(
-          (s) => s.region === region && s.product_family_id === product.id
-        );
+      // Get all submissions for this region
+      const regionSubmissions = allSubmissions?.filter((s) => s.region === region) || [];
 
-        const metrics = [
-          "Customer Revenue",
-          "Net Revenue",
-          "BOM Cost",
-          "NRE Revenue",
-        ];
+      // Calculate region totals (not per product, just totals)
+      const regionMetrics = [
+        "Total Customer Revenue",
+        "Total Net Revenue",
+        "Total VAM $",
+        "Total NRE Revenue",
+        "Group VAM %",
+      ];
 
-        metrics.forEach((metric, metricIdx) => {
-          const row: any[] = [
-            metricIdx === 0 ? product.name : "",
-            metric,
-          ];
+      regionMetrics.forEach((metric) => {
+        const row: any[] = [metric];
 
-          activePeriods.forEach((period) => {
-            let value: any = 0;
+        let quarterTotal = 0;
+        const firstFourPeriods = activePeriods.slice(0, 4);
 
-            if (metric === "Customer Revenue") {
-              value = submission?.[`${period}_customer_revenue`] || 0;
-            } else if (metric === "Net Revenue") {
-              const revenue = submission?.[`${period}_customer_revenue`] || 0;
-              const derate = submission?.[`${period}_derate_percent`] || 0;
-              value = calculateNetRevenue(revenue, derate);
-            } else if (metric === "BOM Cost") {
-              value = submission?.[`${period}_bom_cost`] || 0;
-            } else if (metric === "NRE Revenue") {
-              value = submission?.[`${period}_nre_revenue`] || 0;
+        firstFourPeriods.forEach((period) => {
+          let total = 0;
+
+          if (metric === "Total Customer Revenue") {
+            regionSubmissions.forEach((sub) => {
+              total += sub[`${period}_customer_revenue`] || 0;
+            });
+            quarterTotal += total;
+          } else if (metric === "Total Net Revenue") {
+            regionSubmissions.forEach((sub) => {
+              const revenue = sub[`${period}_customer_revenue`] || 0;
+              const derate = sub[`${period}_derate_percent`] || 0;
+              total += calculateNetRevenue(revenue, derate);
+            });
+            quarterTotal += total;
+          } else if (metric === "Total VAM $") {
+            regionSubmissions.forEach((sub) => {
+              total += sub[`${period}_bom_cost`] || 0;
+            });
+            quarterTotal += total;
+          } else if (metric === "Total NRE Revenue") {
+            regionSubmissions.forEach((sub) => {
+              total += sub[`${period}_nre_revenue`] || 0;
+            });
+            quarterTotal += total;
+          } else if (metric === "Group VAM %") {
+            let totalVamDollar = 0;
+            let totalNetRev = 0;
+
+            regionSubmissions.forEach((sub) => {
+              totalVamDollar += sub[`${period}_bom_cost`] || 0;
+              const revenue = sub[`${period}_customer_revenue`] || 0;
+              const derate = sub[`${period}_derate_percent`] || 0;
+              totalNetRev += calculateNetRevenue(revenue, derate);
+            });
+
+            total = totalNetRev > 0 ? (totalVamDollar / totalNetRev) * 100 : 0;
+          }
+
+          row.push(total);
+        });
+
+        // Add Year 2 and Year 3 if applicable
+        if (settings.time_horizon === "3year") {
+          ["year2", "year3"].forEach((period) => {
+            let total = 0;
+
+            if (metric === "Total Customer Revenue") {
+              regionSubmissions.forEach((sub) => {
+                total += sub[`${period}_customer_revenue`] || 0;
+              });
+            } else if (metric === "Total Net Revenue") {
+              regionSubmissions.forEach((sub) => {
+                const revenue = sub[`${period}_customer_revenue`] || 0;
+                const derate = sub[`${period}_derate_percent`] || 0;
+                total += calculateNetRevenue(revenue, derate);
+              });
+            } else if (metric === "Total VAM $") {
+              regionSubmissions.forEach((sub) => {
+                total += sub[`${period}_bom_cost`] || 0;
+              });
+            } else if (metric === "Total NRE Revenue") {
+              regionSubmissions.forEach((sub) => {
+                total += sub[`${period}_nre_revenue`] || 0;
+              });
+            } else if (metric === "Group VAM %") {
+              let totalVamDollar = 0;
+              let totalNetRev = 0;
+
+              regionSubmissions.forEach((sub) => {
+                totalVamDollar += sub[`${period}_bom_cost`] || 0;
+                const revenue = sub[`${period}_customer_revenue`] || 0;
+                const derate = sub[`${period}_derate_percent`] || 0;
+                totalNetRev += calculateNetRevenue(revenue, derate);
+              });
+
+              total = totalNetRev > 0 ? (totalVamDollar / totalNetRev) * 100 : 0;
             }
 
-            row.push(value);
+            row.push(total);
           });
+        }
 
-          summarySheet.addRow(row);
-        });
-      }
+        // Add 4 Quarter Total
+        if (metric === "Group VAM %") {
+          row.push(""); // Don't total percentages
+        } else {
+          row.push(quarterTotal);
+        }
 
+        summarySheet.addRow(row);
+      });
+
+      // Add spacing between regions
       summarySheet.addRow([]);
     }
 
@@ -303,10 +501,10 @@ export async function GET() {
     // Apply number formatting to summary
     summarySheet.eachRow((row, rowNumber) => {
       row.eachCell((cell, colNumber) => {
-        if (colNumber > 2 && typeof cell.value === "number") {
+        if (colNumber > 1 && typeof cell.value === "number") {
           // Check if it's a percentage row
           const cellValue = row.getCell(1).value?.toString() || "";
-          if (cellValue.includes("BOM %")) {
+          if (cellValue.includes("VAM %")) {
             cell.numFmt = '0.00"%"';
           } else {
             cell.numFmt = '"$"#,##0.00';

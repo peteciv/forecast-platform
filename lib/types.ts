@@ -19,6 +19,7 @@ export interface Settings {
 
 export interface ProductFamily {
   id: string;
+  region: Region;
   name: string;
   sort_order: number | null;
   created_at: string;

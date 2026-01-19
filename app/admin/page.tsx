@@ -9,7 +9,14 @@ export default function AdminPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [productFamilies, setProductFamilies] = useState<ProductFamily[]>([]);
   const [newProductName, setNewProductName] = useState("");
+  const [selectedRegion, setSelectedRegion] = useState<"china" | "penang" | "mexico">("china");
   const [loading, setLoading] = useState(true);
+
+  // Clear input when switching regions
+  function handleRegionChange(region: "china" | "penang" | "mexico") {
+    setSelectedRegion(region);
+    setNewProductName(""); // Clear the input field
+  }
 
   useEffect(() => {
     loadData();
@@ -68,16 +75,27 @@ export default function AdminPage() {
   }
 
   async function addProductFamily() {
-    if (!newProductName.trim()) return;
+    if (!newProductName.trim()) {
+      alert("Please enter a product family name");
+      return;
+    }
 
-    const { error } = await supabase
+    console.log("Adding product:", newProductName.trim(), "to region:", selectedRegion);
+
+    const { data, error } = await supabase
       .from("product_families")
       .insert({ 
         name: newProductName.trim(),
-        sort_order: productFamilies.length 
-      });
+        region: selectedRegion,
+        sort_order: productFamilies.filter(p => p.region === selectedRegion).length 
+      })
+      .select();
 
-    if (!error) {
+    if (error) {
+      console.error("Error adding product:", error);
+      alert("Error adding product: " + error.message);
+    } else {
+      console.log("Product added successfully:", data);
       setNewProductName("");
       loadData();
     }
@@ -165,15 +183,21 @@ export default function AdminPage() {
         <section className="bg-white p-6 rounded-lg shadow-md mb-6">
           <h2 className="text-2xl font-semibold mb-4">Column Labels</h2>
           <div className="grid grid-cols-2 gap-4">
-            {["q1", "q2", "q3", "q4"].map((q) => (
-              <div key={q}>
+            {[
+              { key: "q1", label: "Period 1" },
+              { key: "q2", label: "Period 2" },
+              { key: "q3", label: "Period 3" },
+              { key: "q4", label: "Period 4" }
+            ].map((period) => (
+              <div key={period.key}>
                 <label className="block text-sm font-medium mb-1">
-                  {q.toUpperCase()} Label
+                  {period.label}
                 </label>
                 <input
                   type="text"
-                  value={settings?.[`${q}_label` as keyof Settings] as string || ""}
-                  onChange={(e) => updateColumnLabel(`${q}_label`, e.target.value)}
+                  value={settings?.[`${period.key}_label` as keyof Settings] as string || ""}
+                  onChange={(e) => updateColumnLabel(`${period.key}_label`, e.target.value)}
+                  placeholder={`Enter ${period.label} title`}
                   className="w-full px-3 py-2 border rounded"
                 />
               </div>
@@ -182,23 +206,25 @@ export default function AdminPage() {
               <>
                 <div>
                   <label className="block text-sm font-medium mb-1">
-                    Year 2 Label
+                    Year 2
                   </label>
                   <input
                     type="text"
                     value={settings?.year2_label || ""}
                     onChange={(e) => updateColumnLabel("year2_label", e.target.value)}
+                    placeholder="Enter Year 2 title"
                     className="w-full px-3 py-2 border rounded"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">
-                    Year 3 Label
+                    Year 3
                   </label>
                   <input
                     type="text"
                     value={settings?.year3_label || ""}
                     onChange={(e) => updateColumnLabel("year3_label", e.target.value)}
+                    placeholder="Enter Year 3 title"
                     className="w-full px-3 py-2 border rounded"
                   />
                 </div>
@@ -209,43 +235,68 @@ export default function AdminPage() {
 
         {/* Product Families Section */}
         <section className="bg-white p-6 rounded-lg shadow-md mb-6">
-          <h2 className="text-2xl font-semibold mb-4">Product Families</h2>
+          <h2 className="text-2xl font-semibold mb-4">Product Families by Region</h2>
           
+          {/* Region Tabs */}
+          <div className="flex gap-2 mb-6 border-b">
+            {[
+              { key: "china", label: "China" },
+              { key: "penang", label: "Penang" },
+              { key: "mexico", label: "Mexico" }
+            ].map((region) => (
+              <button
+                key={region.key}
+                onClick={() => handleRegionChange(region.key as "china" | "penang" | "mexico")}
+                className={`px-6 py-3 font-medium border-b-2 transition-colors ${
+                  selectedRegion === region.key
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {region.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Add Product Form */}
           <div className="flex gap-2 mb-4">
             <input
               type="text"
               value={newProductName}
               onChange={(e) => setNewProductName(e.target.value)}
               onKeyPress={(e) => e.key === "Enter" && addProductFamily()}
-              placeholder="Enter new product family name"
+              placeholder={`Enter new product family for ${selectedRegion.charAt(0).toUpperCase() + selectedRegion.slice(1)}`}
               className="flex-1 px-3 py-2 border rounded"
             />
             <button
               onClick={addProductFamily}
               className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
             >
-              Add
+              Add to {selectedRegion.charAt(0).toUpperCase() + selectedRegion.slice(1)}
             </button>
           </div>
 
+          {/* Product List for Selected Region */}
           <div className="space-y-2">
-            {productFamilies.map((product) => (
-              <div
-                key={product.id}
-                className="flex justify-between items-center p-3 bg-gray-50 rounded"
-              >
-                <span className="font-medium">{product.name}</span>
-                <button
-                  onClick={() => deleteProductFamily(product.id)}
-                  className="px-4 py-1 bg-red-500 text-white rounded hover:bg-red-600"
+            {productFamilies
+              .filter(p => p.region === selectedRegion)
+              .map((product) => (
+                <div
+                  key={product.id}
+                  className="flex justify-between items-center p-3 bg-gray-50 rounded"
                 >
-                  Delete
-                </button>
-              </div>
-            ))}
-            {productFamilies.length === 0 && (
+                  <span className="font-medium">{product.name}</span>
+                  <button
+                    onClick={() => deleteProductFamily(product.id)}
+                    className="px-4 py-1 bg-red-500 text-white rounded hover:bg-red-600"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+            {productFamilies.filter(p => p.region === selectedRegion).length === 0 && (
               <p className="text-gray-500 text-center py-4">
-                No product families yet. Add one above!
+                No product families yet for {selectedRegion.charAt(0).toUpperCase() + selectedRegion.slice(1)}. Add one above!
               </p>
             )}
           </div>

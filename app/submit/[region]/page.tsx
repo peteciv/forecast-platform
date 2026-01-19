@@ -36,10 +36,11 @@ export default function RegionalSubmitPage({ params }: { params: Promise<{ regio
       setSettings(settingsData);
     }
 
-    // Load product families
+    // Load product families for this region only
     const { data: productsData } = await supabase
       .from("product_families")
       .select("*")
+      .eq("region", region)
       .order("sort_order", { ascending: true });
 
     if (productsData) {
@@ -125,6 +126,16 @@ export default function RegionalSubmitPage({ params }: { params: Promise<{ regio
       return;
     }
 
+    // Confirmation dialog
+    const confirmed = confirm(
+      `Are you sure you want to submit your forecast data for ${regionName}?\n\n` +
+      `This will save your data and notify the administrator.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
     setSaving(true);
 
     // Prepare data for upsert
@@ -140,14 +151,34 @@ export default function RegionalSubmitPage({ params }: { params: Promise<{ regio
         onConflict: "region,product_family_id",
       });
 
-    setSaving(false);
-
     if (error) {
+      setSaving(false);
       alert("Error saving data: " + error.message);
-    } else {
-      alert("Data submitted successfully!");
-      loadData();
+      return;
     }
+
+    // Send email notification
+    try {
+      const response = await fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          region: regionName,
+          submittedAt: new Date().toISOString(),
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("Failed to send email notification");
+      }
+    } catch (emailError) {
+      console.error("Email notification error:", emailError);
+      // Don't block submission if email fails
+    }
+
+    setSaving(false);
+    alert("Data submitted successfully!");
+    loadData();
   }
 
   if (!validRegion) {
@@ -178,12 +209,6 @@ export default function RegionalSubmitPage({ params }: { params: Promise<{ regio
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-bold">{regionName} Portal</h1>
-          <Link
-            href="/"
-            className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
-          >
-            ← Back to Home
-          </Link>
         </div>
 
         {productFamilies.length === 0 ? (
@@ -205,17 +230,20 @@ export default function RegionalSubmitPage({ params }: { params: Promise<{ regio
                         {getPeriodLabel(period)}
                       </th>
                     ))}
+                    <th className="px-4 py-3 text-center font-semibold border-r min-w-[150px] bg-yellow-50">
+                      4 Quarter Total
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {productFamilies.map((product, idx) => {
                     const rows = [
-                      { label: "Customer Revenue", field: "customer_revenue", type: "input" },
-                      { label: "Derate %", field: "derate_percent", type: "input" },
-                      { label: "Net Revenue", field: "net_revenue", type: "calculated" },
-                      { label: "BOM Cost", field: "bom_cost", type: "input" },
-                      { label: "BOM %", field: "bom_percent", type: "calculated" },
-                      { label: "NRE Revenue", field: "nre_revenue", type: "input" },
+                      { label: "Customer Revenue", field: "customer_revenue", type: "input", format: "currency" },
+                      { label: "Derate %", field: "derate_percent", type: "input", format: "percent" },
+                      { label: "Net Revenue", field: "net_revenue", type: "calculated", format: "currency" },
+                      { label: "VAM $", field: "bom_cost", type: "input", format: "currency" },
+                      { label: "VAM %", field: "vam_percent", type: "calculated", format: "percent" },
+                      { label: "NRE Revenue", field: "nre_revenue", type: "input", format: "currency" },
                     ];
 
                     return rows.map((row, rowIdx) => (
@@ -247,13 +275,13 @@ export default function RegionalSubmitPage({ params }: { params: Promise<{ regio
                               const derate = parseFloat(getValue(product.id, `${period}_derate_percent`)) || 0;
                               const netRev = calculateNetRevenue(revenue, derate);
                               calculatedValue = netRev > 0 ? formatCurrency(netRev) : "";
-                            } else if (row.field === "bom_percent") {
-                              const bom = parseFloat(getValue(product.id, `${period}_bom_cost`)) || 0;
+                            } else if (row.field === "vam_percent") {
+                              const vamDollar = parseFloat(getValue(product.id, `${period}_bom_cost`)) || 0;
                               const revenue = parseFloat(getValue(product.id, `${period}_customer_revenue`)) || 0;
                               const derate = parseFloat(getValue(product.id, `${period}_derate_percent`)) || 0;
                               const netRev = calculateNetRevenue(revenue, derate);
-                              const bomPct = calculateBomPercent(bom, netRev);
-                              calculatedValue = netRev > 0 ? formatPercent(bomPct) : "";
+                              const vamPct = netRev > 0 ? (vamDollar / netRev) * 100 : 0;
+                              calculatedValue = netRev > 0 ? formatPercent(vamPct) : "";
                             }
 
                             return (
@@ -268,17 +296,74 @@ export default function RegionalSubmitPage({ params }: { params: Promise<{ regio
 
                           return (
                             <td key={`${period}-${row.field}`} className="px-2 py-1 border-r">
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={getValue(product.id, fieldName)}
-                                onChange={(e) => setValue(product.id, fieldName, e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-center"
-                                placeholder="0.00"
-                              />
+                              <div className="relative">
+                                {row.format === "currency" && (
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                                )}
+                                <input
+                                  type="number"
+                                  step={row.format === "percent" ? "0.01" : "0.01"}
+                                  value={getValue(product.id, fieldName)}
+                                  onChange={(e) => setValue(product.id, fieldName, e.target.value)}
+                                  className={`w-full px-2 py-1 border rounded text-center ${row.format === "currency" ? "pl-6" : ""} ${row.format === "percent" ? "pr-6" : ""}`}
+                                  placeholder="0.00"
+                                />
+                                {row.format === "percent" && (
+                                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">%</span>
+                                )}
+                              </div>
                             </td>
                           );
                         })}
+                        
+                        {/* 4 Quarter Total Column */}
+                        <td className="px-4 py-2 text-center border-r bg-yellow-50 font-bold">
+                          {(() => {
+                            // Don't show totals for derate_percent
+                            if (row.field === "derate_percent") {
+                              return "";
+                            }
+
+                            // Calculate VAM% for total
+                            if (row.field === "vam_percent") {
+                              const firstFourPeriods = activePeriods.slice(0, 4);
+                              let totalVamDollar = 0;
+                              let totalNetRevenue = 0;
+
+                              firstFourPeriods.forEach((period) => {
+                                const vam = parseFloat(getValue(product.id, `${period}_bom_cost`)) || 0;
+                                totalVamDollar += vam;
+
+                                const revenue = parseFloat(getValue(product.id, `${period}_customer_revenue`)) || 0;
+                                const derate = parseFloat(getValue(product.id, `${period}_derate_percent`)) || 0;
+                                totalNetRevenue += calculateNetRevenue(revenue, derate);
+                              });
+
+                              if (totalNetRevenue > 0) {
+                                const vamPct = (totalVamDollar / totalNetRevenue) * 100;
+                                return formatPercent(vamPct);
+                              }
+                              return "";
+                            }
+
+                            // Calculate total for first 4 quarters only
+                            const firstFourPeriods = activePeriods.slice(0, 4);
+                            let total = 0;
+
+                            firstFourPeriods.forEach((period) => {
+                              if (row.field === "net_revenue") {
+                                const revenue = parseFloat(getValue(product.id, `${period}_customer_revenue`)) || 0;
+                                const derate = parseFloat(getValue(product.id, `${period}_derate_percent`)) || 0;
+                                total += calculateNetRevenue(revenue, derate);
+                              } else {
+                                const value = parseFloat(getValue(product.id, `${period}_${row.field}`)) || 0;
+                                total += value;
+                              }
+                            });
+
+                            return total > 0 ? formatCurrency(total) : "";
+                          })()}
+                        </td>
                       </tr>
                     ));
                   })}
@@ -286,13 +371,7 @@ export default function RegionalSubmitPage({ params }: { params: Promise<{ regio
               </table>
             </div>
 
-            <div className="flex justify-end gap-4">
-              <button
-                onClick={() => loadData()}
-                className="px-6 py-3 bg-gray-200 rounded-lg hover:bg-gray-300 font-medium"
-              >
-                Reset to Saved
-              </button>
+            <div className="flex justify-end">
               <button
                 onClick={handleSubmit}
                 disabled={!isFormComplete() || saving}

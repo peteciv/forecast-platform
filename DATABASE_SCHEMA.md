@@ -9,10 +9,10 @@ Stores global configuration for time horizons and column labels.
 CREATE TABLE settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   time_horizon TEXT NOT NULL CHECK (time_horizon IN ('quarterly', '3year')),
-  q1_label TEXT NOT NULL DEFAULT 'Q1 26',
-  q2_label TEXT NOT NULL DEFAULT 'Q2 26',
-  q3_label TEXT NOT NULL DEFAULT 'Q3 26',
-  q4_label TEXT NOT NULL DEFAULT 'Q4 26',
+  q1_label TEXT NOT NULL DEFAULT 'Period 1',
+  q2_label TEXT NOT NULL DEFAULT 'Period 2',
+  q3_label TEXT NOT NULL DEFAULT 'Period 3',
+  q4_label TEXT NOT NULL DEFAULT 'Period 4',
   year2_label TEXT DEFAULT 'Year 2',
   year3_label TEXT DEFAULT 'Year 3',
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -24,18 +24,21 @@ INSERT INTO settings (time_horizon) VALUES ('quarterly');
 ```
 
 ## 2. Product Families Table
-Stores the list of product families.
+Stores the list of product families per region.
 
 ```sql
 CREATE TABLE product_families (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL UNIQUE,
+  region TEXT NOT NULL CHECK (region IN ('china', 'penang', 'mexico')),
+  name TEXT NOT NULL,
   sort_order INTEGER,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(region, name)
 );
 
--- Create index for sorting
+-- Create indexes
 CREATE INDEX idx_product_families_sort ON product_families(sort_order);
+CREATE INDEX idx_product_families_region ON product_families(region);
 ```
 
 ## 3. Regional Submissions Table
