@@ -1,120 +1,194 @@
-# Database Schema for Supabase
+# Bowling Availability App - Database Schema
 
-Run these SQL commands in your Supabase SQL Editor to set up the database.
+## Overview
+This schema supports the Office 10's Bowling Availability tracking system with player management, match day scheduling, and availability tracking.
 
-## 1. Settings Table
-Stores global configuration for time horizons and column labels.
+## Tables
 
-```sql
-CREATE TABLE settings (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  time_horizon TEXT NOT NULL CHECK (time_horizon IN ('quarterly', '3year')),
-  q1_label TEXT NOT NULL DEFAULT 'Q1 26',
-  q2_label TEXT NOT NULL DEFAULT 'Q2 26',
-  q3_label TEXT NOT NULL DEFAULT 'Q3 26',
-  q4_label TEXT NOT NULL DEFAULT 'Q4 26',
-  year2_label TEXT DEFAULT 'Year 2',
-  year3_label TEXT DEFAULT 'Year 3',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Insert default settings
-INSERT INTO settings (time_horizon) VALUES ('quarterly');
-```
-
-## 2. Product Families Table
-Stores the list of product families.
+### 1. players
+Stores the bowling team members.
 
 ```sql
-CREATE TABLE product_families (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE players (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
-  sort_order INTEGER,
+  rotation_order INTEGER NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Create index for sorting
-CREATE INDEX idx_product_families_sort ON product_families(sort_order);
+-- Initial data (rotation order determines bye sequence)
+INSERT INTO players (name, rotation_order) VALUES
+  ('Jeff', 1),
+  ('Neil', 2),
+  ('Peter', 3),
+  ('Tim', 4),
+  ('Jay', 5);
 ```
 
-## 3. Regional Submissions Table
-Stores the financial data submitted by each region.
+### 2. match_days
+Tracks each Thursday bowling session.
 
 ```sql
-CREATE TABLE regional_submissions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  region TEXT NOT NULL CHECK (region IN ('china', 'penang', 'mexico')),
-  product_family_id UUID NOT NULL REFERENCES product_families(id) ON DELETE CASCADE,
-  
-  -- Q1 Data
-  q1_customer_revenue NUMERIC(15,2),
-  q1_derate_percent NUMERIC(5,2),
-  q1_bom_cost NUMERIC(15,2),
-  q1_nre_revenue NUMERIC(15,2),
-  
-  -- Q2 Data
-  q2_customer_revenue NUMERIC(15,2),
-  q2_derate_percent NUMERIC(5,2),
-  q2_bom_cost NUMERIC(15,2),
-  q2_nre_revenue NUMERIC(15,2),
-  
-  -- Q3 Data
-  q3_customer_revenue NUMERIC(15,2),
-  q3_derate_percent NUMERIC(5,2),
-  q3_bom_cost NUMERIC(15,2),
-  q3_nre_revenue NUMERIC(15,2),
-  
-  -- Q4 Data
-  q4_customer_revenue NUMERIC(15,2),
-  q4_derate_percent NUMERIC(5,2),
-  q4_bom_cost NUMERIC(15,2),
-  q4_nre_revenue NUMERIC(15,2),
-  
-  -- Year 2 Data (optional)
-  year2_customer_revenue NUMERIC(15,2),
-  year2_derate_percent NUMERIC(5,2),
-  year2_bom_cost NUMERIC(15,2),
-  year2_nre_revenue NUMERIC(15,2),
-  
-  -- Year 3 Data (optional)
-  year3_customer_revenue NUMERIC(15,2),
-  year3_derate_percent NUMERIC(5,2),
-  year3_bom_cost NUMERIC(15,2),
-  year3_nre_revenue NUMERIC(15,2),
-  
-  submitted_at TIMESTAMPTZ,
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  
-  -- Ensure one submission per region per product
-  UNIQUE(region, product_family_id)
+CREATE TABLE match_days (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  match_date DATE NOT NULL UNIQUE,
+  bye_player_id UUID REFERENCES players(id),
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Create indexes
-CREATE INDEX idx_regional_submissions_region ON regional_submissions(region);
-CREATE INDEX idx_regional_submissions_product ON regional_submissions(product_family_id);
+-- Index for fast date lookups
+CREATE INDEX idx_match_days_date ON match_days(match_date);
 ```
 
-## 4. Enable Row Level Security (RLS)
+### 3. availability
+Tracks player availability for each match day.
+
+```sql
+CREATE TABLE availability (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  match_day_id UUID REFERENCES match_days(id) ON DELETE CASCADE,
+  player_id UUID REFERENCES players(id) ON DELETE CASCADE,
+  is_available BOOLEAN DEFAULT TRUE,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(match_day_id, player_id)
+);
+
+-- Index for fast lookups
+CREATE INDEX idx_availability_match_day ON availability(match_day_id);
+CREATE INDEX idx_availability_player ON availability(player_id);
+```
+
+## Row Level Security (RLS)
 
 ```sql
 -- Enable RLS on all tables
-ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE product_families ENABLE ROW LEVEL SECURITY;
-ALTER TABLE regional_submissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE players ENABLE ROW LEVEL SECURITY;
+ALTER TABLE match_days ENABLE ROW LEVEL SECURITY;
+ALTER TABLE availability ENABLE ROW LEVEL SECURITY;
 
--- For now, allow all operations (you can restrict later with authentication)
-CREATE POLICY "Allow all on settings" ON settings FOR ALL USING (true);
-CREATE POLICY "Allow all on product_families" ON product_families FOR ALL USING (true);
-CREATE POLICY "Allow all on regional_submissions" ON regional_submissions FOR ALL USING (true);
+-- Public read access (authenticated via app password)
+CREATE POLICY "Allow public read access on players"
+  ON players FOR SELECT USING (true);
+
+CREATE POLICY "Allow public read access on match_days"
+  ON match_days FOR SELECT USING (true);
+
+CREATE POLICY "Allow public read access on availability"
+  ON availability FOR SELECT USING (true);
+
+-- Public write access for availability (protected by app-level password)
+CREATE POLICY "Allow public insert on match_days"
+  ON match_days FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow public insert on availability"
+  ON availability FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow public update on availability"
+  ON availability FOR UPDATE USING (true);
 ```
 
-## Setup Instructions
+## Functions
 
-1. Go to your Supabase project: https://supabase.com/dashboard
-2. Click on "SQL Editor" in the left sidebar
-3. Click "New Query"
-4. Copy and paste all the SQL commands above
-5. Click "Run" to execute
+### Get or Create Current Match Day
+```sql
+CREATE OR REPLACE FUNCTION get_or_create_match_day(target_date DATE)
+RETURNS UUID AS $$
+DECLARE
+  match_id UUID;
+BEGIN
+  -- Try to find existing match day
+  SELECT id INTO match_id FROM match_days WHERE match_date = target_date;
 
-This will create all the necessary tables for your forecast platform!
+  -- If not found, create it
+  IF match_id IS NULL THEN
+    INSERT INTO match_days (match_date) VALUES (target_date)
+    RETURNING id INTO match_id;
+  END IF;
+
+  RETURN match_id;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+### Initialize Availability for Match Day
+```sql
+CREATE OR REPLACE FUNCTION initialize_availability(match_id UUID, bye_player_name TEXT)
+RETURNS VOID AS $$
+DECLARE
+  player_rec RECORD;
+BEGIN
+  FOR player_rec IN SELECT id, name FROM players LOOP
+    INSERT INTO availability (match_day_id, player_id, is_available)
+    VALUES (
+      match_id,
+      player_rec.id,
+      player_rec.name != bye_player_name  -- Bye player starts as unavailable
+    )
+    ON CONFLICT (match_day_id, player_id) DO NOTHING;
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+## Rotation Logic
+The bye rotation is calculated in the application layer:
+
+- **Start Date**: February 6, 2025 (Thursday)
+- **Initial Bye**: Jeff (rotation_order = 1)
+- **Rotation Order**: Jeff -> Neil -> Peter -> Tim -> Jay -> Jeff...
+- **Calculation**: `weeks_since_start % 5` gives the rotation_order of the current bye player
+
+## Quick Setup Commands
+
+Run these in your Supabase SQL Editor:
+
+```sql
+-- 1. Create tables
+CREATE TABLE players (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  rotation_order INTEGER NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE match_days (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  match_date DATE NOT NULL UNIQUE,
+  bye_player_id UUID REFERENCES players(id),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE availability (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  match_day_id UUID REFERENCES match_days(id) ON DELETE CASCADE,
+  player_id UUID REFERENCES players(id) ON DELETE CASCADE,
+  is_available BOOLEAN DEFAULT TRUE,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(match_day_id, player_id)
+);
+
+-- 2. Create indexes
+CREATE INDEX idx_match_days_date ON match_days(match_date);
+CREATE INDEX idx_availability_match_day ON availability(match_day_id);
+CREATE INDEX idx_availability_player ON availability(player_id);
+
+-- 3. Insert initial players
+INSERT INTO players (name, rotation_order) VALUES
+  ('Jeff', 1),
+  ('Neil', 2),
+  ('Peter', 3),
+  ('Tim', 4),
+  ('Jay', 5);
+
+-- 4. Enable RLS and create policies
+ALTER TABLE players ENABLE ROW LEVEL SECURITY;
+ALTER TABLE match_days ENABLE ROW LEVEL SECURITY;
+ALTER TABLE availability ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public read on players" ON players FOR SELECT USING (true);
+CREATE POLICY "Allow public read on match_days" ON match_days FOR SELECT USING (true);
+CREATE POLICY "Allow public read on availability" ON availability FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on match_days" ON match_days FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public insert on availability" ON availability FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update on availability" ON availability FOR UPDATE USING (true);
+```

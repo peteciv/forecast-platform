@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offline - Office 10's Bowling</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #D32F2F 0%, #B71C1C 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      text-align: center;
+      padding: 20px;
+    }
+    .icon {
+      font-size: 80px;
+      margin-bottom: 20px;
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+    p {
+      font-size: 16px;
+      opacity: 0.9;
+    }
+    .retry-btn {
+      margin-top: 30px;
+      padding: 12px 24px;
+      background: white;
+      color: #D32F2F;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .retry-btn:hover {
+      background: #f5f5f5;
+    }
+  </style>
+</head>
+<body>
+  <div class="icon">🎳</div>
+  <h1>You're Offline</h1>
+  <p>Check your connection and try again.</p>
+  <button class="retry-btn" onclick="window.location.reload()">
+    Try Again
+  </button>
+</body>
+</html>
