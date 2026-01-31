@@ -1,31 +1,20 @@
-# Office 10's Bowling Availability App
+# Forecast Platform
 
-A mobile-first PWA for tracking bowling team availability with automatic bye rotation and real-time status updates.
+A web-based forecasting platform for collecting, calculating, and consolidating financial data from regional PMs in China, Penang, and Mexico.
 
 ## Features
 
-- **Automatic Bye Rotation**: Calculates who has the bye based on a 5-week rotation starting Feb 6, 2025
-- **Traffic Light Status**: Visual indicator showing team readiness (Red/Yellow/Green)
-- **Real-time Updates**: Instant availability toggling with optimistic UI updates
-- **PWA Support**: Installable on iOS/Android with offline capability
-- **Password Protection**: Simple team password gate for access control
-
-## Team Members
-
-| Player | Rotation Order |
-|--------|----------------|
-| Jeff   | 1 (Initial Bye) |
-| Neil   | 2 |
-| Peter  | 3 |
-| Tim    | 4 |
-| Jay    | 5 |
+- **Admin Control Center**: Configure time horizons, manage product families, and export data
+- **Regional Submission Portals**: Dedicated entry points for each region
+- **Dynamic Calculations**: Automatic Net Revenue and BOM% calculations
+- **Excel Export**: Generate comprehensive 4-tab Excel reports
 
 ## Tech Stack
 
-- **Framework**: Next.js 14 (App Router)
+- **Framework**: Next.js 15 (App Router)
 - **Database**: Supabase (PostgreSQL)
+- **Excel Export**: ExcelJS
 - **Styling**: Tailwind CSS
-- **Icons**: Lucide React
 - **Hosting**: Vercel-ready
 
 ## Getting Started
@@ -38,115 +27,128 @@ npm install
 
 ### 2. Set Up Supabase Database
 
-1. Create a new Supabase project at [supabase.com](https://supabase.com)
-2. Go to SQL Editor
-3. Copy and run the SQL from `DATABASE_SCHEMA.md`
+1. Go to your Supabase project dashboard
+2. Navigate to SQL Editor
+3. Open `DATABASE_SCHEMA.md` in this project
+4. Copy and run all SQL commands to create tables
 
 ### 3. Configure Environment Variables
 
-Copy `.env.example` to `.env.local`:
+Create a `.env.local` file in the project root:
 
-```bash
-cp .env.example .env.local
-```
-
-Fill in your values:
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=your-project-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-TEAM_PASSWORD=your-team-password
 ```
 
-### 4. Add PWA Icons
+Find these values in your Supabase project:
+- Project Settings → API → Project URL
+- Project Settings → API → anon/public key
 
-Create two PNG icons and place them in `/public`:
-- `icon-192.png` (192x192 pixels)
-- `icon-512.png` (512x512 pixels)
-
-See `public/ICONS_README.txt` for design suggestions.
-
-### 5. Run Development Server
+### 4. Run Development Server
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) on your phone or browser.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## How It Works
+## Usage Guide
 
-### Bye Rotation
+### For Administrators
 
-The bye rotates weekly starting February 6, 2025:
-- Week 0: Jeff
-- Week 1: Neil
-- Week 2: Peter
-- Week 3: Tim
-- Week 4: Jay
-- Week 5: Jeff (cycle repeats)
+1. **Access Admin Center**: Navigate to `/admin`
+2. **Set Time Horizon**: Choose between "Quarterly Only" (4 columns) or "3-Year Plan" (6 columns)
+3. **Configure Labels**: Customize column labels for each period
+4. **Manage Products**: Add or remove product families
+5. **Export Data**: Download consolidated Excel report
+6. **Reset Cycle**: Clear all regional data to start a new forecasting cycle
 
-### Availability Rules
+### For Regional PMs
 
-1. **4 Active Players**: Can freely toggle In/Out
-2. **Bye Player**: Locked as Out by default
-3. **Unlock Condition**: If any active player marks Out, the bye player can toggle In as substitute
+1. **Access Your Portal**:
+   - China: `/submit/china`
+   - Penang: `/submit/penang`
+   - Mexico: `/submit/mexico`
 
-### Traffic Light System
+2. **Enter Data**: Fill in all fields for each product family:
+   - Customer Revenue (manual input)
+   - Derate % (manual input)
+   - Net Revenue (auto-calculated)
+   - BOM Cost (manual input)
+   - BOM % (auto-calculated)
+   - NRE Revenue (manual input)
 
-- **Green** (4 players): Ready to Bowl!
-- **Yellow** (2-3 players): Almost There...
-- **Red** (0-1 players): Need More Players!
+3. **Submit**: Button enables only when all fields are complete
+
+## Excel Export Structure
+
+The export generates a `.xlsx` file with 4 tabs:
+
+1. **China Tab**: Full 6-row data stack for all products
+2. **Penang Tab**: Full 6-row data stack for all products
+3. **Mexico Tab**: Full 6-row data stack for all products
+4. **Summary Tab**:
+   - Global aggregated totals and Group BOM%
+   - Regional breakout (all regions stacked for comparison)
 
 ## Deployment
 
 ### Deploy to Vercel
 
-1. Push to GitHub
-2. Import in Vercel
-3. Add environment variables:
+1. Push your code to GitHub
+2. Import project in Vercel
+3. Add environment variables in Vercel dashboard:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `TEAM_PASSWORD`
 4. Deploy!
 
-### Install as PWA
+### Build for Production
 
-After deployment:
-1. Open the app URL on your phone
-2. Tap "Add to Home Screen" (iOS) or the install prompt (Android)
-3. Launch from home screen for full-screen experience
+```bash
+npm run build
+npm start
+```
 
 ## Project Structure
 
 ```
-bowling-app/
+forecast-platform/
 ├── app/
-│   ├── api/
-│   │   ├── auth/          # Password verification
-│   │   ├── players/       # Get player list
-│   │   └── availability/  # Get/update availability
-│   ├── layout.tsx         # Root layout with PWA meta
-│   ├── page.tsx           # Main app page
-│   └── globals.css        # Global styles
-├── components/
-│   ├── ui/                # Base UI components
-│   ├── PasswordGate.tsx   # Login screen
-│   ├── PlayerCard.tsx     # Player availability card
-│   ├── StatusBanner.tsx   # Traffic light banner
-│   └── BowlingLogo.tsx    # SVG logo
+│   ├── admin/              # Admin control center
+│   ├── submit/[region]/    # Dynamic regional portals
+│   ├── api/export/         # Excel export endpoint
+│   ├── layout.tsx          # Root layout
+│   └── page.tsx            # Home page
 ├── lib/
-│   ├── supabase.ts        # Supabase client
-│   ├── types.ts           # TypeScript types
-│   ├── rotation.ts        # Bye calculation logic
-│   └── utils.ts           # Utility functions
-├── public/
-│   ├── manifest.json      # PWA manifest
-│   ├── sw.js              # Service worker
-│   └── offline.html       # Offline fallback
-├── DATABASE_SCHEMA.md     # Supabase SQL setup
-└── PRD.md                 # Full requirements
+│   ├── supabase.ts         # Supabase client
+│   ├── types.ts            # TypeScript type definitions
+│   └── calculations.ts     # Financial calculation utilities
+├── DATABASE_SCHEMA.md      # SQL schema for Supabase
+└── PRD.md                  # Product requirements document
 ```
+
+## Calculations
+
+### Net Revenue
+```
+Net Revenue = Customer Revenue × (1 - Derate% / 100)
+```
+
+### BOM Percentage
+```
+BOM% = (BOM Cost / Net Revenue) × 100
+```
+
+### Group BOM% (Summary Tab)
+```
+Group BOM% = (Sum of All BOM Costs / Sum of All Net Revenues) × 100
+```
+
+## Support
+
+For issues or questions, refer to `PRD.md` for detailed specifications.
 
 ## License
 
-Private project - Office 10's Bowling Team
+Private project - All rights reserved

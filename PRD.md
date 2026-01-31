@@ -1,120 +1,48 @@
-# Office 10's Bowling Availability App - Product Requirements Document
+# Forecast Platform - Product Requirements Document
 
 ## 1. Project Overview
-A mobile-first PWA for the Office 10's bowling team to track player availability for weekly Thursday matches. Features automatic bye rotation, real-time availability updates, and a traffic light status system.
+A web-based forecasting platform designed for a Lead PM to collect, calculate, and consolidate financial data from regional PMs in China, Penang, and Mexico. The system replaces manual Excel management with a "Database-First" approach, ensuring data integrity and professional reporting.
 
 ## 2. Technical Stack
-- **Framework**: Next.js 14 (App Router)
+- **Framework**: Next.js (App Router)
 - **Hosting**: Vercel
 - **Database**: Supabase (PostgreSQL)
-- **UI Components**: Tailwind CSS + shadcn/ui
-- **Icons**: Lucide React
-- **PWA**: Web App Manifest + Service Worker
+- **Excel Engine**: exceljs
+- **UI Components**: Tailwind CSS + Shadcn UI
 
-## 3. Team Members
-| Name | Rotation Order |
-|------|----------------|
-| Jeff | 1 (Initial Bye) |
-| Neil | 2 |
-| Peter | 3 |
-| Tim | 4 |
-| Jay | 5 |
+## 3. Functional Requirements
 
-## 4. Core Logic
+### A. Admin Settings (The "Control Center")
+- **Flexible Time Horizon**: Toggle between "Quarterly Only" (4 columns) or "3-Year Plan" (4 quarters + 2 full years).
+- **Dynamic Labels**: Input fields to name each column (e.g., "Q1 26", "Q2 26", "Year 2", "Year 3").
+- **Product Catalog**: Add/Edit/Delete Product Family names that appear in PM dropdowns.
+- **Cycle Management**: A "Reset" button to clear regional data for the next cycle.
 
-### A. The Rotation System
-- **Start Date**: February 6, 2025 (Thursday)
-- **Initial Bye**: Jeff
-- **Rotation Order**: Jeff -> Neil -> Peter -> Tim -> Jay -> Jeff...
-- **Calculation**:
-  - Count weeks since Feb 6, 2025
-  - `bye_index = weeks_since_start % 5`
-  - Map to rotation order (0=Jeff, 1=Neil, 2=Peter, 3=Tim, 4=Jay)
+### B. Regional Submission Portals (China, Penang, Mexico)
+- **Unique Access**: 3 specific URLs (e.g., `/submit/china`) that allow regional PMs to enter data.
+- **Dynamic Entry Table**:
+  - **Rows**: Defined by the Admin's Product Family list.
+  - **Columns**: 4 or 6 columns based on the Admin's selected horizon.
+  - **The "Calculated Row" Stack**: For every Product Family, the PM sees:
+    1. **Customer Revenue** (Manual Input)
+    2. **Derate %** (Manual Input)
+    3. **Net Revenue** (Auto-calc: $Revenue \times (1 - Derate)$)
+    4. **BOM Cost** (Manual Input)
+    5. **BOM %** (Auto-calc: $BOM / Net Revenue$)
+    6. **NRE Revenue** (Manual Input)
+- **Validation**: Submit is only enabled when all inputs for all active columns are filled.
 
-### B. Availability Rules
-1. **4 Active Players**: Can freely toggle between 'In' and 'Out'
-2. **Bye Player**: Locked as 'Out' by default
-3. **Bye Unlock Condition**: If ANY active player marks 'Out', the bye player becomes unlocked and can toggle 'In' as a substitute
-4. **Player Count**: Always need exactly 4 players marked 'In' to bowl
+### C. The Excel Master Export (4-Tab System)
+- **Tabs 1-3 (Regional)**: Contains the full 6-row stack for every Product Family for that specific region.
+- **Tab 4 (Summary)**:
+  - **Top Section (Global Aggregation)**:
+    - **Summations**: Total Customer Revenue, Net Revenue, BOM, and NRE for the entire group.
+    - **Calculations**: The "Group BOM %" is recalculated at the total level ($\sum Total BOM / \sum Total Net Revenue$).
+  - **Bottom Section (Regional Breakout)**: A copy of the China, Penang, and Mexico tables stacked vertically for quick comparison.
 
-### C. Traffic Light System
-Visual background indicator based on available player count:
-- **Red** (#EF4444): 0-1 players available - "Need More Players!"
-- **Yellow** (#F59E0B): 2-3 players available - "Almost There..."
-- **Green** (#22C55E): 4 players available - "Ready to Bowl!"
-
-## 5. Functional Requirements
-
-### A. Password Gate
-- Simple team password stored in `TEAM_PASSWORD` environment variable
-- Password input screen shown on first visit
-- Successful login stored in LocalStorage for persistence
-- No user accounts - just a shared team password
-
-### B. Main Dashboard
-- **Header**: Logo + "Office 10's Bowling" title
-- **Date Display**: Current match date (next Thursday)
-- **Bye Indicator**: Shows who has the bye this week
-- **Player Cards**: 5 cards showing each player's status
-- **Status Banner**: Traffic light background with player count message
-
-### C. Player Cards
-Each card displays:
-- Player name
-- Toggle switch for In/Out status
-- Visual indicator (green check / red X)
-- "BYE" badge when applicable
-- Disabled state when bye player is locked
-
-### D. PWA Features
-- Installable on iOS/Android home screens
-- Offline capability for viewing last known state
-- App icon and splash screen
-- Standalone display mode (no browser chrome)
-
-## 6. UI/UX Design
-
-### Theme Colors
-- **Primary (Bowling Red)**: #D32F2F
-- **White**: #FFFFFF
-- **Traffic Light Red**: #EF4444
-- **Traffic Light Yellow**: #F59E0B
-- **Traffic Light Green**: #22C55E
-- **Text Dark**: #1F2937
-- **Text Muted**: #6B7280
-
-### Logo
-Placeholder: A bowling ball striking pins with "XXX" text overlay (strike symbol)
-
-### Typography
-- Font: System fonts (Inter or similar sans-serif)
-- Headings: Bold, larger sizes
-- Body: Regular weight, readable on mobile
-
-## 7. Database Schema
-
-### Tables
-1. **players**: id, name, rotation_order, created_at
-2. **match_days**: id, match_date, bye_player_id, created_at
-3. **availability**: id, match_day_id, player_id, is_available, updated_at
-
-See `DATABASE_SCHEMA.md` for complete SQL setup.
-
-## 8. Environment Variables
-```
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-TEAM_PASSWORD=your_team_password
-```
-
-## 9. Definition of Done
-- [ ] Next.js 14 project initialized with Tailwind + shadcn/ui
-- [ ] Supabase client configured
-- [ ] Password gate with LocalStorage persistence
-- [ ] Bye rotation calculation working correctly
-- [ ] Player availability toggles functional
-- [ ] Traffic light system updates in real-time
-- [ ] Bye player lock/unlock logic implemented
-- [ ] PWA manifest and service worker configured
-- [ ] Mobile-responsive design
-- [ ] Deployed to Vercel
+## 4. Definition of Done (For Claude Code)
+- **Environment**: Set up Next.js with Supabase schemas for settings, products, and submissions.
+- **Logic**: Implement the 6-row financial calculation engine in both the UI and the Excel export.
+- **Flexibility**: Ensure the UI and Excel file adapt automatically when "Year 2" and "Year 3" columns are enabled.
+- **UI**: Create a clean, table-based interface with sticky headers for easy data entry.
+- **Export**: Create a "Download Master Forecast" button that generates a multi-tab .xlsx file using exceljs.
