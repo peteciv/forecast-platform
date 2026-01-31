@@ -88,6 +88,10 @@ export async function POST(request: NextRequest) {
       throw matchError;
     }
 
+    if (!matchDay) {
+      throw new Error('Failed to get or create match day');
+    }
+
     // Upsert availability
     const { error: upsertError } = await supabase
       .from('availability')
