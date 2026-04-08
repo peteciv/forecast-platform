@@ -12,7 +12,7 @@
 
 2. **Environment Configuration**
    - Created `.env.local` with Supabase credentials
-   - Supabase URL: https://your-project-id.supabase.co
+   - Supabase URL: (see .env.local)
 
 3. **Admin Control Center** (http://localhost:3000/admin)
    - Time horizon toggle: Quarterly (4 columns) or 3-Year Plan (6 columns)
